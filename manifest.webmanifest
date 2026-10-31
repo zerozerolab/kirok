@@ -1,0 +1,32 @@
+{
+  "name": "복용 기록표",
+  "short_name": "복용 기록표",
+  "description": "복용 시각 기록과 허가사항 기준 혈중농도 참고 곡선. 의료 조언이 아니며 정보를 수집하지 않습니다.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F7F7F6",
+  "theme_color": "#F7F7F6",
+  "lang": "ko",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
