@@ -7,7 +7,7 @@
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex, nofollow">  <!-- 검색 엔진에 노출하지 않음 -->
 <meta name="color-scheme" content="light">
-<meta name="theme-color" content="#F7F7F6">
+<meta name="theme-color" content="#FFFFFF">
 <meta name="description" content="복용 시각을 기록하고 허가사항 기준 혈중농도 참고 곡선을 보는 도구. 의료 조언이 아니며, 어떤 정보도 수집하지 않습니다.">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -27,12 +27,15 @@
       <h1>복용 기록표</h1>
       <p class="today" id="today">오늘</p>
     </div>
-    <p class="clock" id="clock">--:--</p>
-    <p class="clock-label">현재 시각</p>
+    <div class="top-clock">
+      <p class="clock" id="clock" aria-describedby="clock-label">--:--</p>
+      <p class="clock-label" id="clock-label">현재 시각</p>
+    </div>
   </header>
 
-  <section aria-label="안내">
-    <dl class="notice">
+  <section class="caution" aria-label="안내">
+    <p class="caution-tag" aria-hidden="true">주의</p>
+    <dl class="caution-list">
       <dt>의료 조언 아님</dt>
       <dd>복용 변경은 의사·약사와 상의</dd>
       <dt>정보 수집 안 함</dt>
@@ -40,89 +43,94 @@
     </dl>
   </section>
 
-  <section class="summary" id="summary" aria-live="polite"></section>
+  <section class="label-sheet" aria-labelledby="guide-label">
+    <h2 class="bar" id="guide-label">복용 안내</h2>
+    <dl class="guide" id="summary" aria-live="polite"></dl>
 
-  <section class="card" aria-labelledby="chart-label">
-    <h2 id="chart-label" class="label">혈중농도 참고 곡선</h2>
-    <div id="curveView">
+    <h3 id="chart-label" class="sheet-head">혈중농도 참고 곡선</h3>
+    <div id="curveView" class="curve-view">
       <svg id="chart" viewBox="0 0 360 200" role="img" aria-label="오늘 복용 기록에 따른 혈중농도 참고 곡선"></svg>
       <p class="chart-empty" id="chartEmpty">복용을 기록하면 곡선 표시</p>
-      <p class="fine caption-center">허가사항 수치로 그린 모형 · 실제 농도는 개인차 있음</p>
+      <p class="fine">허가사항 수치로 그린 모형 · 실제 농도는 개인차 있음</p>
     </div>
     <div id="streakView" class="streak-view" hidden>
       <div class="streak" id="streak"></div>
-      <p class="streak-note">아토목세틴은 하루 중 시간보다<br><strong>매일 꾸준히 먹는 것</strong>이 중요한 약</p>
+      <p class="streak-note">아토목세틴은 하루 중 시간보다 <strong>매일 꾸준히 먹는 것</strong>이 중요한 약</p>
     </div>
   </section>
 
-  <section class="card" aria-labelledby="drug-label">
-    <h2 id="drug-label" class="label">약 선택</h2>
-    <div class="chips" id="drugChips" role="radiogroup" aria-labelledby="drug-label"></div>
-    <h3 id="dose-label" class="sublabel">용량 <span class="sublabel-note">국내 허가 용량</span></h3>
-    <div class="dose-chips" id="doseChips" role="radiogroup" aria-labelledby="dose-label"></div>
+  <section class="block" aria-labelledby="drug-label">
+    <h2 id="drug-label" class="head">약 선택</h2>
+    <div class="seg seg-drug" id="drugChips" role="radiogroup" aria-labelledby="drug-label"></div>
+    <h3 id="dose-label" class="subhead">용량 <span class="subhead-note">국내 허가 용량</span></h3>
+    <div class="seg seg-dose" id="doseChips" role="radiogroup" aria-labelledby="dose-label"></div>
     <dl class="facts" id="drugMeta"></dl>
     <dl class="facts facts-note" id="drugNote" hidden></dl>
   </section>
 
-  <section class="card" aria-labelledby="log-label">
-    <div class="row-between">
-      <h2 id="log-label" class="label">오늘 기록</h2>
-      <span class="fine-inline">7일 후 자동 삭제</span>
+  <section class="block" aria-labelledby="log-label">
+    <div class="head-row">
+      <h2 id="log-label" class="head">오늘 기록</h2>
+      <span class="head-aside">7일 후 자동 삭제</span>
     </div>
     <ul class="log" id="log"></ul>
-    <p class="log-empty" id="logEmpty">오늘 기록 없음<br>아래 버튼으로 바로 기록</p>
+    <p class="log-empty" id="logEmpty">오늘 기록 없음 · 아래 버튼으로 바로 기록</p>
   </section>
 
-  <section class="card" aria-labelledby="add-label">
-    <h2 id="add-label" class="label">다른 시각으로 기록</h2>
-    <div class="ampm" role="group" aria-label="오전 오후">
-      <button type="button" class="ampm-btn" id="ampmAm" aria-pressed="true">오전</button>
-      <button type="button" class="ampm-btn" id="ampmPm" aria-pressed="false">오후</button>
+  <section class="block" aria-labelledby="add-label">
+    <h2 id="add-label" class="head">다른 시각으로 기록</h2>
+    <div class="seg seg-ampm" role="group" aria-label="오전 오후">
+      <button type="button" class="seg-btn" id="ampmAm" aria-pressed="true">오전</button>
+      <button type="button" class="seg-btn" id="ampmPm" aria-pressed="false">오후</button>
     </div>
     <div class="time-fields">
       <label class="tf">
-        <input type="text" id="hourInput" inputmode="numeric" pattern="[0-9]*" maxlength="2" autocomplete="off" aria-describedby="timeError">
+        <input type="text" id="hourInput" inputmode="numeric" pattern="[0-9]*" maxlength="2" autocomplete="off" aria-label="시" aria-describedby="timeError">
         <span class="tf-unit">시</span>
       </label>
       <span class="tf-sep" aria-hidden="true">:</span>
       <label class="tf">
-        <input type="text" id="minInput" inputmode="numeric" pattern="[0-9]*" maxlength="2" autocomplete="off" aria-describedby="timeError">
+        <input type="text" id="minInput" inputmode="numeric" pattern="[0-9]*" maxlength="2" autocomplete="off" aria-label="분" aria-describedby="timeError">
         <span class="tf-unit">분</span>
       </label>
     </div>
     <p class="field-hint">예) 오후 선택 후 2시 05분</p>
-    <p class="field-error" id="timeError" hidden></p>
-    <button type="button" class="btn btn-sage-outline" id="addAtTime">이 시각으로 기록</button>
+    <p class="field-error" id="timeError" role="alert" hidden></p>
+    <button type="button" class="btn btn-outline" id="addAtTime">이 시각으로 기록</button>
   </section>
 
-  <details class="card help">
+  <details class="block fold">
     <summary>앱처럼 쓰기 (홈 화면에 추가)</summary>
-    <p class="help-lead">추가하면 아이콘으로 바로 실행 · 설치·가입 없음</p>
-    <div class="howto">
-      <h3>아이폰</h3>
-      <ol class="steps">
-        <li><span><strong>Safari</strong>로 이 페이지 열기</span></li>
-        <li><span>아래쪽 <strong>공유 버튼</strong><span class="hint">네모 위로 화살표가 나온 모양</span></span></li>
-        <li><span><strong>홈 화면에 추가</strong> → <strong>추가</strong></span></li>
-      </ol>
+    <div class="fold-body">
+      <p class="fold-lead">추가하면 아이콘으로 바로 실행 · 설치·가입 없음</p>
+      <div class="howto">
+        <h3>아이폰</h3>
+        <ol class="steps">
+          <li><span><strong>Safari</strong>로 이 페이지 열기</span></li>
+          <li><span>아래쪽 <strong>공유 버튼</strong><span class="hint">네모 위로 화살표가 나온 모양</span></span></li>
+          <li><span><strong>홈 화면에 추가</strong> → <strong>추가</strong></span></li>
+        </ol>
+      </div>
+      <div class="howto">
+        <h3>안드로이드</h3>
+        <ol class="steps">
+          <li><span><strong>Chrome</strong>으로 이 페이지 열기</span></li>
+          <li><span>오른쪽 위 <strong>⋮</strong> 메뉴</span></li>
+          <li><span><strong>홈 화면에 추가</strong> 또는 <strong>앱 설치</strong></span></li>
+        </ol>
+      </div>
+      <p class="fold-lead">홈 화면의 <strong>복용 기록표</strong> 아이콘으로 실행</p>
+      <p class="fold-note">아이폰은 아이콘으로만 사용 · Safari와 기록 분리</p>
+      <button type="button" class="btn btn-outline btn-inline" id="shareBtn">링크 공유</button>
+      <p class="fine" id="shareMsg" hidden></p>
     </div>
-    <div class="howto">
-      <h3>안드로이드</h3>
-      <ol class="steps">
-        <li><span><strong>Chrome</strong>으로 이 페이지 열기</span></li>
-        <li><span>오른쪽 위 <strong>⋮</strong> 메뉴</span></li>
-        <li><span><strong>홈 화면에 추가</strong> 또는 <strong>앱 설치</strong></span></li>
-      </ol>
-    </div>
-    <p class="help-lead">홈 화면의 <strong>복용 기록표</strong> 아이콘으로 실행</p>
-    <p class="help-note">아이폰은 아이콘으로만 사용 · Safari와 기록 분리</p>
-    <button type="button" class="btn btn-ghost" id="shareBtn">링크 공유</button>
-    <p class="fine" id="shareMsg" hidden></p>
   </details>
 
-  <details class="card help">
+  <details class="block fold">
     <summary>출처와 수치</summary>
-    <ul class="sources" id="sources"></ul>
+    <div class="fold-body">
+      <ul class="sources" id="sources"></ul>
+    </div>
   </details>
 
   <footer class="foot">

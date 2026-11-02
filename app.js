@@ -145,6 +145,7 @@
 
   // ---------- 상태와 저장 ----------
   var state = { records: [], selected: 'concerta', dose: {} };
+  var justAdded = null;   // 방금 기록한 줄을 잠깐 강조하기 위한 표시
 
   // 허가 용량 목록에 있는 값만 허용
   function isValidDose(drug, v) { return isDrug(drug) && DRUGS[drug].doses.indexOf(v) !== -1; }
@@ -201,8 +202,10 @@
     if (dose !== null) rec.dose = dose;
     state.records.push(rec);
     state.records.sort(function (a, b) { return a.t - b.t; });
+    justAdded = rec.id;
     save();
     render();
+    justAdded = null;
   }
 
   function removeRecord(id) {
@@ -329,13 +332,13 @@
     var x = function (t) { return L + (t - start) / (end - start) * (R - L); };
     var anchor = function (px, margin) { return px < L + margin ? 'start' : (px > R - margin ? 'end' : 'middle'); };
 
-    // 가로축과 3시간 눈금
-    s.appendChild(svg('line', { x1: L, y1: B, x2: R, y2: B, 'class': 'ax' }));
+    // 3시간 눈금 (세로 점선 안내선 + 가로축 눈금)
     for (var t = Math.ceil(start / HOUR) * HOUR; t <= end; t += HOUR) {
       var hr = new Date(t).getHours();
       if (hr % 3 !== 0) continue;
       var tx = x(t);
-      s.appendChild(svg('line', { x1: tx, y1: B, x2: tx, y2: B + 4, 'class': 'ax' }));
+      s.appendChild(svg('line', { x1: tx, y1: T, x2: tx, y2: B, 'class': 'ax-grid' }));
+      s.appendChild(svg('line', { x1: tx, y1: B, x2: tx, y2: B + 5, 'class': 'ax-tick' }));
       var label = svg('text', { x: tx, y: B + 18, 'class': 'ax-text', 'text-anchor': anchor(tx, 16) });
       label.textContent = (hr === 0 ? 24 : hr) + '시';
       s.appendChild(label);
@@ -343,26 +346,39 @@
 
     // 곡선
     var series = curveSeries(start, end);
+    var scale = 1;
     $('chartEmpty').hidden = !!series;
     if (series) {
-      var scale = Math.max(1, Math.max.apply(null, series.pts.map(function (p) { return p[1]; })));
+      scale = Math.max(1, Math.max.apply(null, series.pts.map(function (p) { return p[1]; })));
       var line = series.pts.map(function (p, i) {
         return (i ? 'L' : 'M') + x(p[0]).toFixed(1) + ',' + (B - (p[1] / scale) * (B - T)).toFixed(1);
       }).join('');
       s.appendChild(svg('path', { d: line + 'L' + R + ',' + B + 'L' + L + ',' + B + 'Z', 'class': 'area-main' }));
       s.appendChild(svg('path', { d: line, 'class': 'curve-main' }));
-      series.recs.forEach(function (r) {
-        if (r.t >= start && r.t <= end) s.appendChild(svg('circle', { cx: x(r.t), cy: B, r: 4, 'class': 'dose-dot' }));
-      });
     }
 
-    // 현재 시각
+    // 가로축 (곡선 위에 그려 기준선이 또렷하게)
+    s.appendChild(svg('line', { x1: L, y1: B, x2: R, y2: B, 'class': 'ax' }));
+
+    // 현재 시각: 빨간 점선 + 곡선 위 위치 표시
     if (now >= start && now <= end) {
       var nx = x(now);
       s.appendChild(svg('line', { x1: nx, y1: T - 6, x2: nx, y2: B, 'class': 'now-line' }));
       var nt = svg('text', { x: nx, y: T - 10, 'class': 'now-text', 'text-anchor': anchor(nx, 40) });
       nt.textContent = '지금 ' + hhmm(now);
       s.appendChild(nt);
+      if (series) {
+        var v = 0;
+        series.recs.forEach(function (r) { v += profile(r.drug)((now - r.t) / HOUR); });
+        if (v > 0.001) s.appendChild(svg('circle', { cx: nx, cy: B - (v / scale) * (B - T), r: 5, 'class': 'now-dot' }));
+      }
+    }
+
+    // 복용 시점 표시 (축 위)
+    if (series) {
+      series.recs.forEach(function (r) {
+        if (r.t >= start && r.t <= end) s.appendChild(svg('circle', { cx: x(r.t), cy: B, r: 5, 'class': 'dose-dot' }));
+      });
     }
   }
 
@@ -387,20 +403,29 @@
       var cell = el('div', 'day' + (day.taken ? ' on' : '') + (isToday ? ' is-today' : ''));
       cell.setAttribute('aria-label', (date.getMonth() + 1) + '월 ' + date.getDate() + '일 ' + (day.taken ? '복용' : '기록 없음'));
       cell.appendChild(el('span', 'day-w', isToday ? '오늘' : WEEK[date.getDay()]));
-      var dot = el('span', 'day-dot', day.taken ? '✓' : '');
-      dot.setAttribute('aria-hidden', 'true');
-      cell.appendChild(dot);
+      var mark = el('span', 'day-mark');
+      mark.setAttribute('aria-hidden', 'true');
+      if (day.taken) {
+        var check = svg('svg', { viewBox: '0 0 18 18' });
+        check.appendChild(svg('path', {
+          d: 'M4 9.5l3.2 3.2L14 5.8', fill: 'none', stroke: '#FFFFFF',
+          'stroke-width': 2.4, 'stroke-linecap': 'round', 'stroke-linejoin': 'round'
+        }));
+        mark.appendChild(check);
+      }
+      cell.appendChild(mark);
       cell.appendChild(el('span', 'day-d', String(date.getDate())));
       row.appendChild(cell);
     });
   }
 
-  // ---------- 화면: 요약 ----------
-  function stat(k, v) {
-    var box = el('div', 'stat');
-    box.appendChild(el('p', 'stat-k', k));
-    box.appendChild(el('p', 'stat-v', v));
-    return box;
+  // ---------- 화면: 복용 안내 (약봉투의 인쇄된 안내표처럼) ----------
+  // parts: [[클래스, 글자], ...]
+  function guideRow(box, label, parts) {
+    box.appendChild(el('dt', null, label));
+    var dd = el('dd');
+    parts.forEach(function (p) { dd.appendChild(el('span', p[0], p[1])); });
+    box.appendChild(dd);
   }
 
   function renderSummary(now) {
@@ -412,17 +437,27 @@
     });
     var recent = !!last && last.t >= now - RECENT_MS;
 
+    if (recent) {
+      guideRow(box, '약', [['', nameWithDose(last)]]);
+      var when = [['g-mid', hhmm(last.t)]];
+      if (last.t < startOfDay(now)) when.push(['g-note', '어제']);
+      guideRow(box, '복용 시각', when);
+      guideRow(box, '복용 후', [['g-big', durText(now - last.t)]]);
+    } else {
+      var cur = currentDose();
+      guideRow(box, '약', [['', d.name + (cur !== null ? ' ' + cur + 'mg' : '')]].concat(cur === null ? [['g-note', '용량 미선택']] : []));
+      guideRow(box, '최근 복용', [['g-empty', '기록 없음 · 아래 버튼으로 기록']]);
+    }
+
     if (!hasCurve(key)) {
       var taken = lastSevenDays(key, now).filter(function (x) { return x.taken; }).length;
-      if (!recent && taken === 0) return;
-      box.appendChild(recent ? stat(nameWithDose(last) + ' 복용 후', durText(now - last.t)) : stat(d.name, '오늘 기록 없음'));
-      box.appendChild(stat('최근 7일', taken + '일 복용'));
+      guideRow(box, '최근 7일', [['g-mid', taken + '일'], ['g-note', '복용']]);
       return;
     }
-    if (!recent) return;
-    box.appendChild(stat(nameWithDose(last) + ' 복용 후', durText(now - last.t)));
-    var a = last.t + d.tmaxRange[0] * HOUR, b = last.t + d.tmaxRange[1] * HOUR;
-    box.appendChild(stat('농도 가장 높을 때 (평균)', a === b ? hhmm(a) : hhmm(a) + '~' + hhmm(b)));
+    if (recent) {
+      var a = last.t + d.tmaxRange[0] * HOUR, b = last.t + d.tmaxRange[1] * HOUR;
+      guideRow(box, '가장 높을 때', [['g-mid', a === b ? hhmm(a) : hhmm(a) + '~' + hhmm(b)], ['g-note', '허가사항 평균']]);
+    }
   }
 
   // ---------- 화면: 오늘 기록·출처·시계 ----------
@@ -433,7 +468,7 @@
     var today = state.records.filter(function (r) { return r.t >= day && r.t < day + DAY; });
     $('logEmpty').hidden = today.length > 0;
     today.forEach(function (r) {
-      var li = el('li');
+      var li = el('li', r.id === justAdded ? 'fresh' : null);
       li.appendChild(el('span', 'log-time', hhmm(r.t)));
       var name = el('span', 'log-name', DRUGS[r.drug].name);
       if (doseText(r)) name.appendChild(el('span', 'log-dose', doseText(r)));
