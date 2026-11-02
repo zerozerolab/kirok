@@ -11,7 +11,7 @@
   var HOUR = 60 * 60 * 1000;
   var DAY = 24 * HOUR;
   var KEEP_MS = 7 * DAY;          // 기록 보관 기간
-  var RECENT_MS = 30 * HOUR;      // 요약에 보여줄 "최근 복용" 범위
+  var RECENT_MS = 30 * HOUR;      // 상태·곡선에 반영하는 "최근 복용" 범위
   var PROFILE_HOURS = 36;         // 한 번 복용의 곡선을 계산하는 길이
   var SVGNS = 'http://www.w3.org/2000/svg';
   var WEEK = ['일', '월', '화', '수', '목', '금', '토'];
@@ -218,10 +218,9 @@
   function pad(n) { return (n < 10 ? '0' : '') + n; }
   function hhmm(t) { var d = new Date(t); return pad(d.getHours()) + ':' + pad(d.getMinutes()); }
   function startOfDay(t) { var d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime(); }
-  function durText(ms) {
-    if (ms < 0) return '복용 전';
-    var m = Math.floor(ms / 60000), h = Math.floor(m / 60);
-    return h > 0 ? h + '시간 ' + (m % 60) + '분' : (m % 60) + '분';
+  function ampmText(t) {
+    var d = new Date(t), h = d.getHours();
+    return (h < 12 ? '오전 ' : '오후 ') + (h % 12 === 0 ? 12 : h % 12) + ':' + pad(d.getMinutes());
   }
   function doseText(r) { return isValidDose(r.drug, r.dose) ? r.dose + 'mg' : ''; }
   function nameWithDose(r) { var dose = doseText(r); return DRUGS[r.drug].name + (dose ? ' ' + dose : ''); }
@@ -239,6 +238,7 @@
     Object.keys(attrs).forEach(function (k) { n.setAttribute(k, String(attrs[k])); });
     return n;
   }
+  function svgText(attrs, text) { var t = svg('text', attrs); t.textContent = text; return t; }
   function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
   function radio(cls, label, checked, onClick) {
     var b = el('button', cls, label);
@@ -253,53 +253,26 @@
     rows.forEach(function (row) {
       dl.appendChild(el('dt', null, row[0]));
       var dd = el('dd');
-      if (row[2] === 'strong') { dd.className = 'em'; dd.appendChild(el('strong', null, row[1])); }
+      if (row[2] === 'strong') dd.appendChild(el('strong', null, row[1]));
       else dd.textContent = row[1];
       dl.appendChild(dd);
     });
   }
 
-  // ---------- 화면: 약·용량 ----------
-  function renderDrugs() {
-    var box = $('drugChips');
-    clear(box);
-    DRUG_ORDER.forEach(function (key) {
-      box.appendChild(radio('chip', DRUGS[key].name, key === state.selected, function () {
-        state.selected = key;
-        save(); render();
-      }));
+  // ---------- 기록 조회 ----------
+  function latest(filter, now) {
+    var last = null;
+    state.records.forEach(function (r) {
+      if (r.t <= now && filter(r) && (!last || r.t > last.t)) last = r;
     });
+    return last;
+  }
+  function recentCurveDose(now) {
+    var r = latest(function (x) { return hasCurve(x.drug); }, now);
+    return r && r.t >= now - RECENT_MS ? r : null;
   }
 
-  function renderDoses() {
-    var d = DRUGS[state.selected], cur = currentDose(), box = $('doseChips');
-    clear(box);
-    d.doses.forEach(function (mg) {
-      box.appendChild(radio('chip chip-dose', mg + 'mg', cur === mg, function () {
-        if (cur === mg) delete state.dose[state.selected];   // 다시 누르면 선택 해제
-        else state.dose[state.selected] = mg;
-        save(); render();
-      }));
-    });
-    // 한 줄에 4개까지, 넘으면 두 줄로 고르게
-    var n = d.doses.length;
-    box.style.gridTemplateColumns = 'repeat(' + (n <= 4 ? n : Math.ceil(n / 2)) + ', minmax(0, 1fr))';
-    $('doseNowLabel').textContent = d.name + (cur !== null ? ' ' + cur + 'mg' : ' · 용량 미선택');
-  }
-
-  function renderDrugInfo() {
-    var d = DRUGS[state.selected];
-    fillFacts($('drugMeta'), [
-      ['형태', d.desc],
-      ['가장 높을 때', '먹고 ' + d.tmaxText],
-      ['절반으로 줄 때', d.halfText]
-    ]);
-    var note = $('drugNote');
-    fillFacts(note, d.note);
-    note.hidden = d.note.length === 0;
-  }
-
-  // ---------- 화면: 곡선 ----------
+  // ---------- 곡선 계산 ----------
   // 그래프 가로 범위: 오늘 6시~24시 (6시 전 기록이 있으면 그 시각부터)
   function chartRange(now) {
     var day = startOfDay(now), start = day + 6 * HOUR;
@@ -310,75 +283,73 @@
   }
 
   // 곡선이 있는 약의 기록을 모두 더한 상대 농도 (전날 복용분 포함)
-  function curveSeries(start, end) {
-    var recs = state.records.filter(function (r) {
+  function curveRecords(start, end) {
+    return state.records.filter(function (r) {
       return hasCurve(r.drug) && r.t > start - PROFILE_HOURS * HOUR && r.t <= end;
     });
-    if (!recs.length) return null;
-    var pts = [], step = (end - start) / 180;
-    for (var t = start; t <= end + 1; t += step) {
-      var v = 0;
-      recs.forEach(function (r) { v += profile(r.drug)((t - r.t) / HOUR); });
-      pts.push([t, v]);
-    }
-    return { pts: pts, recs: recs };
+  }
+  function levelAt(recs, t) {
+    var v = 0;
+    recs.forEach(function (r) { v += profile(r.drug)((t - r.t) / HOUR); });
+    return v;
   }
 
-  function renderChart(now) {
+  // 지금 상태 한 단어. 기준은 위 곡선 모형: 오늘 곡선 최고점의 80% 이상이면 '가장 높을 때',
+  // 최고점 전이면 '오르는 중', 25% 이상이면 '내려가는 중', 그 아래는 '거의 빠짐'.
+  function curveWord(recs, range, now) {
+    var peakV = 0, peakT = range.start, step = (range.end - range.start) / 180;
+    for (var t = range.start; t <= range.end + 1; t += step) {
+      var v = levelAt(recs, t);
+      if (v > peakV) { peakV = v; peakT = t; }
+    }
+    if (peakV <= 0) return '거의 빠짐';
+    var ratio = levelAt(recs, now) / peakV;
+    if (ratio >= 0.8) return '가장 높을 때';
+    if (now < peakT) return '오르는 중';
+    if (ratio >= 0.25) return '내려가는 중';
+    return '거의 빠짐';
+  }
+
+  // ---------- 화면: 곡선 ----------
+  var C = { L: 8, R: 352, T: 34, B: 168 };   // viewBox 360x196 안의 그림 영역
+
+  function renderChart(now, recs, range) {
     var s = $('chart');
     clear(s);
-    var L = 8, R = 352, T = 22, B = 168;   // viewBox 360x200 안의 그림 영역
-    var range = chartRange(now), start = range.start, end = range.end;
-    var x = function (t) { return L + (t - start) / (end - start) * (R - L); };
-    var anchor = function (px, margin) { return px < L + margin ? 'start' : (px > R - margin ? 'end' : 'middle'); };
+    var x = function (t) { return C.L + (t - range.start) / (range.end - range.start) * (C.R - C.L); };
 
-    // 3시간 눈금 (세로 점선 안내선 + 가로축 눈금)
-    for (var t = Math.ceil(start / HOUR) * HOUR; t <= end; t += HOUR) {
+    // 6시간 눈금
+    for (var t = Math.ceil(range.start / HOUR) * HOUR; t <= range.end; t += HOUR) {
       var hr = new Date(t).getHours();
-      if (hr % 3 !== 0) continue;
-      var tx = x(t);
-      s.appendChild(svg('line', { x1: tx, y1: T, x2: tx, y2: B, 'class': 'ax-grid' }));
-      s.appendChild(svg('line', { x1: tx, y1: B, x2: tx, y2: B + 5, 'class': 'ax-tick' }));
-      var label = svg('text', { x: tx, y: B + 18, 'class': 'ax-text', 'text-anchor': anchor(tx, 16) });
-      label.textContent = (hr === 0 ? 24 : hr) + '시';
-      s.appendChild(label);
+      if (hr % 6 !== 0) continue;
+      var tx = x(t), edge = tx < C.L + 16 ? 'start' : (tx > C.R - 16 ? 'end' : 'middle');
+      s.appendChild(svgText({ x: tx, y: C.B + 20, 'class': 'ax-text', 'text-anchor': edge }, (hr === 0 ? 24 : hr) + '시'));
     }
+    s.appendChild(svg('line', { x1: C.L, y1: C.B, x2: C.R, y2: C.B, 'class': 'ax' }));
 
-    // 곡선
-    var series = curveSeries(start, end);
-    var scale = 1;
-    $('chartEmpty').hidden = !!series;
-    if (series) {
-      scale = Math.max(1, Math.max.apply(null, series.pts.map(function (p) { return p[1]; })));
-      var line = series.pts.map(function (p, i) {
-        return (i ? 'L' : 'M') + x(p[0]).toFixed(1) + ',' + (B - (p[1] / scale) * (B - T)).toFixed(1);
-      }).join('');
-      s.appendChild(svg('path', { d: line + 'L' + R + ',' + B + 'L' + L + ',' + B + 'Z', 'class': 'area-main' }));
-      s.appendChild(svg('path', { d: line, 'class': 'curve-main' }));
-    }
+    var pts = [], step = (range.end - range.start) / 180;
+    for (var u = range.start; u <= range.end + 1; u += step) pts.push([u, levelAt(recs, u)]);
+    var scale = Math.max(1, Math.max.apply(null, pts.map(function (p) { return p[1]; })));
+    var y = function (v) { return C.B - (v / scale) * (C.B - C.T); };
+    var toPath = function (list) {
+      return list.map(function (p, i) { return (i ? 'L' : 'M') + x(p[0]).toFixed(1) + ',' + y(p[1]).toFixed(1); }).join('');
+    };
 
-    // 가로축 (곡선 위에 그려 기준선이 또렷하게)
-    s.appendChild(svg('line', { x1: L, y1: B, x2: R, y2: B, 'class': 'ax' }));
+    // 앞으로의 곡선은 연하게, 지나온 곡선은 진하게
+    var nowV = levelAt(recs, now);
+    var past = pts.filter(function (p) { return p[0] < now; }).concat([[now, nowV]]);
+    s.appendChild(svg('path', { d: toPath(pts), 'class': 'curve-future' }));
+    s.appendChild(svg('path', { d: toPath(past) + 'L' + x(now).toFixed(1) + ',' + C.B + 'L' + C.L + ',' + C.B + 'Z', 'class': 'area-past' }));
+    s.appendChild(svg('path', { d: toPath(past), 'class': 'curve-past' }));
 
-    // 현재 시각: 빨간 점선 + 곡선 위 위치 표시
-    if (now >= start && now <= end) {
-      var nx = x(now);
-      s.appendChild(svg('line', { x1: nx, y1: T - 6, x2: nx, y2: B, 'class': 'now-line' }));
-      var nt = svg('text', { x: nx, y: T - 10, 'class': 'now-text', 'text-anchor': anchor(nx, 40) });
-      nt.textContent = '지금 ' + hhmm(now);
-      s.appendChild(nt);
-      if (series) {
-        var v = 0;
-        series.recs.forEach(function (r) { v += profile(r.drug)((now - r.t) / HOUR); });
-        if (v > 0.001) s.appendChild(svg('circle', { cx: nx, cy: B - (v / scale) * (B - T), r: 5, 'class': 'now-dot' }));
-      }
-    }
-
-    // 복용 시점 표시 (축 위)
-    if (series) {
-      series.recs.forEach(function (r) {
-        if (r.t >= start && r.t <= end) s.appendChild(svg('circle', { cx: x(r.t), cy: B, r: 5, 'class': 'dose-dot' }));
-      });
+    // 지금 위치
+    if (now >= range.start && now <= range.end) {
+      var nx = x(now), ny = y(nowV);
+      var anchor = nx < C.L + 40 ? 'start' : (nx > C.R - 40 ? 'end' : 'middle');
+      s.appendChild(svg('line', { x1: nx, y1: ny, x2: nx, y2: C.B, 'class': 'now-line' }));
+      s.appendChild(svg('circle', { cx: nx, cy: ny, r: 11, 'class': 'now-halo' }));
+      s.appendChild(svg('circle', { cx: nx, cy: ny, r: 6, 'class': 'now-dot' }));
+      s.appendChild(svgText({ x: nx, y: ny - 18, 'class': 'now-text', 'text-anchor': anchor }, '지금'));
     }
   }
 
@@ -395,10 +366,10 @@
     return out;
   }
 
-  function renderStreak(now) {
-    var row = $('streak');
+  function renderStreak(days) {
+    var row = $('streakView');
     clear(row);
-    lastSevenDays(state.selected, now).forEach(function (day, i) {
+    days.forEach(function (day, i) {
       var date = new Date(day.start), isToday = i === 6;
       var cell = el('div', 'day' + (day.taken ? ' on' : '') + (isToday ? ' is-today' : ''));
       cell.setAttribute('aria-label', (date.getMonth() + 1) + '월 ' + date.getDate() + '일 ' + (day.taken ? '복용' : '기록 없음'));
@@ -409,7 +380,7 @@
         var check = svg('svg', { viewBox: '0 0 18 18' });
         check.appendChild(svg('path', {
           d: 'M4 9.5l3.2 3.2L14 5.8', fill: 'none', stroke: '#FFFFFF',
-          'stroke-width': 2.4, 'stroke-linecap': 'round', 'stroke-linejoin': 'round'
+          'stroke-width': 2.6, 'stroke-linecap': 'round', 'stroke-linejoin': 'round'
         }));
         mark.appendChild(check);
       }
@@ -419,54 +390,60 @@
     });
   }
 
-  // ---------- 화면: 복용 안내 (약봉투의 인쇄된 안내표처럼) ----------
-  // parts: [[클래스, 글자], ...]
-  function guideRow(box, label, parts) {
-    box.appendChild(el('dt', null, label));
-    var dd = el('dd');
-    parts.forEach(function (p) { dd.appendChild(el('span', p[0], p[1])); });
-    box.appendChild(dd);
+  // ---------- 화면: 봉투 (상태 · 곡선 · 오늘 복용) ----------
+  function setState(key, value, note, empty) {
+    $('stateKey').textContent = key;
+    var v = $('stateValue');
+    v.textContent = value;
+    v.classList.toggle('is-empty', !!empty);
+    $('stateNote').textContent = note || '';
+    $('stateNote').hidden = !note;
   }
 
-  function renderSummary(now) {
-    var box = $('summary');
-    clear(box);
-    var key = state.selected, d = DRUGS[key], last = null;
-    state.records.forEach(function (r) {
-      if (r.drug === key && r.t <= now && (!last || r.t > last.t)) last = r;
-    });
-    var recent = !!last && last.t >= now - RECENT_MS;
+  function setLastDose(r, now) {
+    var p = $('lastDose');
+    clear(p);
+    if (!r) return;
+    p.appendChild(el('strong', null, (r.t < startOfDay(now) ? '어제 ' : '') + hhmm(r.t)));
+    p.appendChild(document.createTextNode(' ' + nameWithDose(r) + ' 복용'));
+  }
 
-    if (recent) {
-      guideRow(box, '약', [['', nameWithDose(last)]]);
-      var when = [['g-mid', hhmm(last.t)]];
-      if (last.t < startOfDay(now)) when.push(['g-note', '어제']);
-      guideRow(box, '복용 시각', when);
-      guideRow(box, '복용 후', [['g-big', durText(now - last.t)]]);
-    } else {
-      var cur = currentDose();
-      guideRow(box, '약', [['', d.name + (cur !== null ? ' ' + cur + 'mg' : '')]].concat(cur === null ? [['g-note', '용량 미선택']] : []));
-      guideRow(box, '최근 복용', [['g-empty', '기록 없음 · 아래 버튼으로 기록']]);
-    }
+  function renderEnvelope(now) {
+    var key = state.selected, curve = hasCurve(key);
+    $('streakView').hidden = curve;
 
-    if (!hasCurve(key)) {
-      var taken = lastSevenDays(key, now).filter(function (x) { return x.taken; }).length;
-      guideRow(box, '최근 7일', [['g-mid', taken + '일'], ['g-note', '복용']]);
+    if (!curve) {
+      $('curveView').hidden = true;
+      $('modelNote').hidden = true;
+      var days = lastSevenDays(key, now);
+      var taken = days.filter(function (x) { return x.taken; }).length;
+      setState('최근 7일', taken + '일 복용', '매일 꾸준히 먹는 것이 중요한 약');
+      renderStreak(days);
+      var lastA = latest(function (x) { return x.drug === key; }, now);
+      setLastDose(lastA && lastA.t >= now - RECENT_MS ? lastA : null, now);
       return;
     }
-    if (recent) {
-      var a = last.t + d.tmaxRange[0] * HOUR, b = last.t + d.tmaxRange[1] * HOUR;
-      guideRow(box, '가장 높을 때', [['g-mid', a === b ? hhmm(a) : hhmm(a) + '~' + hhmm(b)], ['g-note', '허가사항 평균']]);
+
+    var range = chartRange(now), recs = curveRecords(range.start, range.end);
+    var last = recentCurveDose(now);
+    $('curveView').hidden = !last;          // 기록이 없으면 빈 그래프 대신 안내만
+    $('modelNote').hidden = !last;
+    setLastDose(last, now);
+    if (!last) {
+      setState('오늘', '아직 기록 없음', '먹었다면 아래 버튼으로 기록', true);
+      return;
     }
+    setState('농도 참고', curveWord(recs, range, now));
+    renderChart(now, recs, range);
   }
 
-  // ---------- 화면: 오늘 기록·출처·시계 ----------
+  // ---------- 화면: 오늘 기록·약 정보·출처·시계 ----------
   function renderLog(now) {
     var list = $('log');
     clear(list);
     var day = startOfDay(now);
     var today = state.records.filter(function (r) { return r.t >= day && r.t < day + DAY; });
-    $('logEmpty').hidden = today.length > 0;
+    $('logSection').hidden = today.length === 0;   // 오늘 기록이 없으면 구획째 숨김 (위 봉투에 이미 안내)
     today.forEach(function (r) {
       var li = el('li', r.id === justAdded ? 'fresh' : null);
       li.appendChild(el('span', 'log-time', hhmm(r.t)));
@@ -480,6 +457,18 @@
       li.appendChild(del);
       list.appendChild(li);
     });
+  }
+
+  function renderInfo() {
+    var d = DRUGS[state.selected];
+    $('infoName').textContent = d.name + ' · ' + d.desc;
+    fillFacts($('drugMeta'), [
+      ['가장 높을 때', '먹고 ' + d.tmaxText],
+      ['절반으로 줄 때', d.halfText]
+    ]);
+    var note = $('drugNote');
+    fillFacts(note, d.note);
+    note.hidden = d.note.length === 0;
   }
 
   function renderSources() {
@@ -499,6 +488,7 @@
     });
     var note = el('li', 'src src-note');
     note.appendChild(el('span', null, '곡선은 위 수치로 그린 모형 (측정값 아님)'));
+    note.appendChild(el('span', null, '상태 표시는 이 앱의 기준: 그날 곡선 최고점의 80% 이상 \'가장 높을 때\', 25% 미만 \'거의 빠짐\''));
     note.appendChild(el('span', null, '비스펜틴 CR: 공식 수치 미확인으로 제외'));
     ul.appendChild(note);
   }
@@ -510,22 +500,73 @@
   }
 
   function render() {
-    var now = Date.now(), curve = hasCurve(state.selected);
+    var now = Date.now();
     renderClock(now);
-    renderDrugs();
-    renderDoses();
-    renderDrugInfo();
-    $('curveView').hidden = !curve;
-    $('streakView').hidden = curve;
-    $('chart-label').textContent = curve ? '혈중농도 참고 곡선' : '최근 7일 복용';
-    if (curve) renderChart(now); else renderStreak(now);
-    renderSummary(now);
+    renderEnvelope(now);
     renderLog(now);
+    renderInfo();
+    if (sheetOpen()) renderSheet();
+  }
+
+  // ---------- 기록 시트 ----------
+  var customTime = false;   // false면 '지금' 시각으로 기록
+  var inputPm = false;
+
+  function sheetOpen() { return $('sheet').hasAttribute('open'); }
+
+  function openSheet() {
+    customTime = false;
+    showTimeError('');
+    renderSheet();
+    var dlg = $('sheet');
+    if (typeof dlg.showModal === 'function') dlg.showModal();
+    else dlg.setAttribute('open', '');
+  }
+  function closeSheet() {
+    var dlg = $('sheet');
+    if (typeof dlg.close === 'function') dlg.close();
+    else dlg.removeAttribute('open');
+  }
+
+  function renderSheet() {
+    var d = DRUGS[state.selected], cur = currentDose();
+
+    var drugs = $('drugChips');
+    clear(drugs);
+    DRUG_ORDER.forEach(function (key) {
+      drugs.appendChild(radio('chip', DRUGS[key].name, key === state.selected, function () {
+        state.selected = key;
+        save(); render(); renderSheet();
+      }));
+    });
+
+    var doses = $('doseChips');
+    clear(doses);
+    d.doses.forEach(function (mg) {
+      doses.appendChild(radio('chip chip-dose', mg + 'mg', cur === mg, function () {
+        if (cur === mg) delete state.dose[state.selected];   // 다시 누르면 선택 해제
+        else state.dose[state.selected] = mg;
+        save(); renderSheet();
+      }));
+    });
+    // 한 줄에 4개까지, 넘으면 두 줄로 고르게
+    var n = d.doses.length;
+    doses.style.gridTemplateColumns = 'repeat(' + (n <= 4 ? n : Math.ceil(n / 2)) + ', minmax(0, 1fr))';
+
+    $('whenNow').hidden = customTime;
+    $('whenCustom').hidden = !customTime;
+    $('nowLabel').textContent = hhmm(Date.now());
+    updateSummary();
+  }
+
+  function updateSummary() {
+    var d = DRUGS[state.selected], cur = currentDose();
+    var t = customTime ? peekInputTime() : Date.now();
+    $('recordSummary').textContent = d.name + (cur !== null ? ' ' + cur + 'mg' : ' · 용량 미선택') +
+      (t !== null ? ' · ' + (customTime ? ampmText(t) : hhmm(t)) : '');
   }
 
   // ---------- 시각 직접 입력 (오전/오후 + 시·분) ----------
-  var inputPm = false;
-
   function setAmPm(pm) {
     inputPm = pm;
     $('ampmAm').setAttribute('aria-pressed', pm ? 'false' : 'true');
@@ -540,19 +581,22 @@
     $('minInput').classList.toggle('invalid', field === 'm');
   }
 
-  // 입력값을 오늘 날짜의 시각(ms)으로 바꿈. 잘못되면 안내를 띄우고 null.
-  function readInputTime() {
+  // 입력값 → 오늘 날짜의 시각(ms). 잘못되면 null (peek는 안내 없이 확인만)
+  function parseInputTime(report) {
     var hv = $('hourInput').value.trim(), mv = $('minInput').value.trim();
-    if (!/^\d{1,2}$/.test(hv)) { showTimeError('시를 숫자로 입력 (1~12)', 'h'); return null; }
-    if (!/^\d{1,2}$/.test(mv)) { showTimeError('분을 숫자로 입력 (0~59)', 'm'); return null; }
+    var fail = function (msg, f) { if (report) showTimeError(msg, f); return null; };
+    if (!/^\d{1,2}$/.test(hv)) return fail('시를 숫자로 입력 (1~12)', 'h');
+    if (!/^\d{1,2}$/.test(mv)) return fail('분을 숫자로 입력 (0~59)', 'm');
     var h = parseInt(hv, 10), mi = parseInt(mv, 10);
-    if (h < 1 || h > 12) { showTimeError('시는 1~12 사이로 입력', 'h'); return null; }
-    if (mi > 59) { showTimeError('분은 0~59 사이로 입력', 'm'); return null; }
-    showTimeError('');
+    if (h < 1 || h > 12) return fail('시는 1~12 사이로 입력', 'h');
+    if (mi > 59) return fail('분은 0~59 사이로 입력', 'm');
+    if (report) showTimeError('');
     var d = new Date();
     d.setHours((h % 12) + (inputPm ? 12 : 0), mi, 0, 0);
     return d.getTime();
   }
+  function readInputTime() { return parseInputTime(true); }
+  function peekInputTime() { return parseInputTime(false); }
 
   function fillInputWithNow() {
     var d = new Date(), h = d.getHours();
@@ -561,13 +605,35 @@
     $('minInput').value = pad(d.getMinutes());
   }
 
-  function setupTimeInput() {
-    var hour = $('hourInput'), min = $('minInput');
+  function setupSheet() {
+    var hour = $('hourInput'), min = $('minInput'), dlg = $('sheet');
+    $('openSheet').addEventListener('click', openSheet);
+    $('closeSheet').addEventListener('click', closeSheet);
+    // 시트 바깥(어두운 부분)을 누르면 닫기
+    dlg.addEventListener('click', function (e) {
+      if (e.target !== dlg) return;
+      var r = dlg.getBoundingClientRect();
+      if (e.clientY < r.top || e.clientX < r.left || e.clientX > r.right) closeSheet();
+    });
+
+    $('changeTime').addEventListener('click', function () {
+      customTime = true;
+      fillInputWithNow();
+      renderSheet();
+      hour.focus();
+    });
+    $('backToNow').addEventListener('click', function () {
+      customTime = false;
+      showTimeError('');
+      renderSheet();
+    });
+
     [hour, min].forEach(function (inp) {
       inp.addEventListener('input', function () {
         var digits = inp.value.replace(/\D/g, '').slice(0, 2);
         if (digits !== inp.value) inp.value = digits;
         showTimeError('');
+        updateSummary();
       });
       inp.addEventListener('focus', function () { inp.select(); });
     });
@@ -577,8 +643,15 @@
     });
     hour.addEventListener('blur', function () { if (/^0\d$/.test(hour.value)) hour.value = hour.value.slice(1); });
     min.addEventListener('blur', function () { if (/^\d$/.test(min.value)) min.value = '0' + min.value; });
-    $('ampmAm').addEventListener('click', function () { setAmPm(false); showTimeError(''); });
-    $('ampmPm').addEventListener('click', function () { setAmPm(true); showTimeError(''); });
+    $('ampmAm').addEventListener('click', function () { setAmPm(false); showTimeError(''); updateSummary(); });
+    $('ampmPm').addEventListener('click', function () { setAmPm(true); showTimeError(''); updateSummary(); });
+
+    $('recordBtn').addEventListener('click', function () {
+      var t = customTime ? readInputTime() : Date.now();
+      if (t === null) return;
+      closeSheet();
+      addRecord(state.selected, t);
+    });
   }
 
   // ---------- 기타 버튼 ----------
@@ -624,17 +697,9 @@
   function init() {
     load();
     save();   // 오래된 기록 정리 후 저장
-    fillInputWithNow();
-    setupTimeInput();
+    setupSheet();
     setupClearButton();
     setupShareButton();
-
-    $('doseNow').addEventListener('click', function () { addRecord(state.selected, Date.now()); });
-    $('addAtTime').addEventListener('click', function () {
-      var t = readInputTime();
-      if (t !== null) addRecord(state.selected, t);
-    });
-
     renderSources();
     render();
     setInterval(render, 30000);

@@ -7,7 +7,7 @@
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex, nofollow">  <!-- 검색 엔진에 노출하지 않음 -->
 <meta name="color-scheme" content="light">
-<meta name="theme-color" content="#FFFFFF">
+<meta name="theme-color" content="#E7ECF2">
 <meta name="description" content="복용 시각을 기록하고 허가사항 기준 혈중농도 참고 곡선을 보는 도구. 의료 조언이 아니며, 어떤 정보도 수집하지 않습니다.">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -23,83 +23,57 @@
 <div class="app">
 
   <header class="top">
-    <div class="top-title">
-      <h1>복용 기록표</h1>
-      <p class="today" id="today">오늘</p>
-    </div>
-    <div class="top-clock">
-      <p class="clock" id="clock" aria-describedby="clock-label">--:--</p>
-      <p class="clock-label" id="clock-label">현재 시각</p>
-    </div>
+    <p class="today" id="today">오늘</p>
+    <p class="clock" id="clock" aria-label="현재 시각">--:--</p>
   </header>
 
-  <section class="caution" aria-label="안내">
-    <p class="caution-tag" aria-hidden="true">주의</p>
-    <dl class="caution-list">
-      <dt>의료 조언 아님</dt>
-      <dd>복용 변경은 의사·약사와 상의</dd>
-      <dt>정보 수집 안 함</dt>
-      <dd>기록은 내 기기에만, 7일간만 보관</dd>
-    </dl>
-  </section>
+  <!-- 약봉투: 지금 상태 · 곡선 · 오늘 복용 · 주의 -->
+  <main class="env">
+    <h1 class="env-title">복용 기록표</h1>
 
-  <section class="label-sheet" aria-labelledby="guide-label">
-    <h2 class="bar" id="guide-label">복용 안내</h2>
-    <dl class="guide" id="summary" aria-live="polite"></dl>
+    <section class="state" aria-live="polite">
+      <p class="state-k" id="stateKey">농도 참고</p>
+      <p class="state-v" id="stateValue">-</p>
+      <p class="state-note" id="stateNote" hidden></p>
+    </section>
 
-    <h3 id="chart-label" class="sheet-head">혈중농도 참고 곡선</h3>
-    <div id="curveView" class="curve-view">
-      <svg id="chart" viewBox="0 0 360 200" role="img" aria-label="오늘 복용 기록에 따른 혈중농도 참고 곡선"></svg>
-      <p class="chart-empty" id="chartEmpty">복용을 기록하면 곡선 표시</p>
-      <p class="fine">허가사항 수치로 그린 모형 · 실제 농도는 개인차 있음</p>
+    <div id="curveView">
+      <svg id="chart" class="chart" viewBox="0 0 360 196" role="img" aria-label="오늘 복용 기록에 따른 혈중농도 참고 곡선"></svg>
     </div>
-    <div id="streakView" class="streak-view" hidden>
-      <div class="streak" id="streak"></div>
-      <p class="streak-note">아토목세틴은 하루 중 시간보다 <strong>매일 꾸준히 먹는 것</strong>이 중요한 약</p>
-    </div>
-  </section>
+    <div id="streakView" class="streak" hidden></div>
 
-  <section class="block" aria-labelledby="drug-label">
-    <h2 id="drug-label" class="head">약 선택</h2>
-    <div class="seg seg-drug" id="drugChips" role="radiogroup" aria-labelledby="drug-label"></div>
-    <h3 id="dose-label" class="subhead">용량 <span class="subhead-note">국내 허가 용량</span></h3>
-    <div class="seg seg-dose" id="doseChips" role="radiogroup" aria-labelledby="dose-label"></div>
-    <dl class="facts" id="drugMeta"></dl>
-    <dl class="facts facts-note" id="drugNote" hidden></dl>
-  </section>
+    <p class="last" id="lastDose"></p>
 
-  <section class="block" aria-labelledby="log-label">
-    <div class="head-row">
-      <h2 id="log-label" class="head">오늘 기록</h2>
-      <span class="head-aside">7일 후 자동 삭제</span>
+    <section class="caution" aria-label="안내">
+      <p class="caution-tag" aria-hidden="true">주의</p>
+      <dl class="caution-list">
+        <dt>의료 조언 아님</dt>
+        <dd>복용 변경은 의사·약사와 상의</dd>
+        <dt>정보 수집 안 함</dt>
+        <dd>기록은 내 기기에만, 7일간만 보관</dd>
+      </dl>
+    </section>
+  </main>
+  <p class="model-note" id="modelNote">허가사항 수치로 그린 모형 · 실제 농도는 개인차 있음</p>
+
+  <section class="sec" id="logSection" aria-labelledby="log-label">
+    <div class="sec-head">
+      <h2 id="log-label">오늘 기록</h2>
+      <span class="sec-aside">7일 후 자동 삭제</span>
     </div>
     <ul class="log" id="log"></ul>
-    <p class="log-empty" id="logEmpty">오늘 기록 없음 · 아래 버튼으로 바로 기록</p>
   </section>
 
-  <section class="block" aria-labelledby="add-label">
-    <h2 id="add-label" class="head">다른 시각으로 기록</h2>
-    <div class="seg seg-ampm" role="group" aria-label="오전 오후">
-      <button type="button" class="seg-btn" id="ampmAm" aria-pressed="true">오전</button>
-      <button type="button" class="seg-btn" id="ampmPm" aria-pressed="false">오후</button>
+  <details class="fold">
+    <summary>약 정보</summary>
+    <div class="fold-body">
+      <p class="fold-lead" id="infoName"></p>
+      <dl class="facts" id="drugMeta"></dl>
+      <dl class="facts facts-note" id="drugNote" hidden></dl>
     </div>
-    <div class="time-fields">
-      <label class="tf">
-        <input type="text" id="hourInput" inputmode="numeric" pattern="[0-9]*" maxlength="2" autocomplete="off" aria-label="시" aria-describedby="timeError">
-        <span class="tf-unit">시</span>
-      </label>
-      <span class="tf-sep" aria-hidden="true">:</span>
-      <label class="tf">
-        <input type="text" id="minInput" inputmode="numeric" pattern="[0-9]*" maxlength="2" autocomplete="off" aria-label="분" aria-describedby="timeError">
-        <span class="tf-unit">분</span>
-      </label>
-    </div>
-    <p class="field-hint">예) 오후 선택 후 2시 05분</p>
-    <p class="field-error" id="timeError" role="alert" hidden></p>
-    <button type="button" class="btn btn-outline" id="addAtTime">이 시각으로 기록</button>
-  </section>
+  </details>
 
-  <details class="block fold">
+  <details class="fold">
     <summary>앱처럼 쓰기 (홈 화면에 추가)</summary>
     <div class="fold-body">
       <p class="fold-lead">추가하면 아이콘으로 바로 실행 · 설치·가입 없음</p>
@@ -126,7 +100,7 @@
     </div>
   </details>
 
-  <details class="block fold">
+  <details class="fold">
     <summary>출처와 수치</summary>
     <div class="fold-body">
       <ul class="sources" id="sources"></ul>
@@ -134,37 +108,76 @@
   </details>
 
   <footer class="foot">
-    <div class="foot-block">
-      <h2 class="foot-title">의료 조언 아님</h2>
-      <ul>
-        <li>공개된 허가사항 수치로 그린 참고 그림</li>
-        <li>진단·치료·복용 지시를 대신하지 않음</li>
-        <li>증상·부작용은 의사·약사와 상의</li>
-      </ul>
-    </div>
-    <div class="foot-block">
-      <h2 class="foot-title">개인정보 수집 안 함</h2>
-      <ul>
-        <li>서버로 보내는 데이터 없음</li>
-        <li>분석·광고·쿠키 없음</li>
-        <li>기록은 내 기기에만 보관, 7일 후 자동 삭제</li>
-        <li>접속 기록(IP)은 호스팅사 GitHub가 보안 목적으로 보관</li>
-      </ul>
-    </div>
-    <div class="danger-zone">
-      <button type="button" class="btn btn-danger" id="clearBtn">기록 전체 삭제</button>
-      <p class="fine" id="clearMsg" hidden></p>
-    </div>
+    <h2>의료 조언 아님</h2>
+    <ul>
+      <li>공개된 허가사항 수치로 그린 참고 그림</li>
+      <li>진단·치료·복용 지시를 대신하지 않음</li>
+      <li>증상·부작용은 의사·약사와 상의</li>
+    </ul>
+    <h2>개인정보 수집 안 함</h2>
+    <ul>
+      <li>서버로 보내는 데이터 없음</li>
+      <li>분석·광고·쿠키 없음</li>
+      <li>기록은 내 기기에만 보관, 7일 후 자동 삭제</li>
+      <li>접속 기록(IP)은 호스팅사 GitHub가 보안 목적으로 보관</li>
+    </ul>
+    <button type="button" class="btn btn-danger" id="clearBtn">기록 전체 삭제</button>
+    <p class="fine" id="clearMsg" hidden></p>
   </footer>
 
 </div>
 
 <div class="dock">
-  <button type="button" class="btn btn-primary" id="doseNow">
-    <span class="dock-main">지금 복용 기록</span>
-    <span class="dock-sub" id="doseNowLabel"></span>
+  <button type="button" class="btn btn-primary" id="openSheet" aria-haspopup="dialog">
+    <span class="btn-main">복용 기록하기</span>
+    <span class="btn-sub">약·용량·시각 선택</span>
   </button>
 </div>
+
+<!-- 기록 시트: 약 → 용량 → 시각 → 기록 -->
+<dialog class="sheet" id="sheet" aria-labelledby="sheet-title">
+  <div class="sheet-grab" aria-hidden="true"></div>
+  <div class="sheet-head">
+    <h2 id="sheet-title">복용 기록</h2>
+    <button type="button" class="link-btn" id="closeSheet">닫기</button>
+  </div>
+
+  <h3 class="sheet-label" id="drug-label">약</h3>
+  <div class="seg seg-3" id="drugChips" role="radiogroup" aria-labelledby="drug-label"></div>
+
+  <h3 class="sheet-label" id="dose-label">용량 <span>국내 허가 용량</span></h3>
+  <div class="seg" id="doseChips" role="radiogroup" aria-labelledby="dose-label"></div>
+
+  <h3 class="sheet-label">복용 시각</h3>
+  <div class="when" id="whenNow">
+    <p class="when-now"><span>지금</span> <span id="nowLabel">--:--</span></p>
+    <button type="button" class="link-btn" id="changeTime">시각 바꾸기</button>
+  </div>
+  <div id="whenCustom" hidden>
+    <div class="seg seg-2" role="group" aria-label="오전 오후">
+      <button type="button" class="seg-btn" id="ampmAm" aria-pressed="true">오전</button>
+      <button type="button" class="seg-btn" id="ampmPm" aria-pressed="false">오후</button>
+    </div>
+    <div class="time-fields">
+      <label class="tf">
+        <input type="text" id="hourInput" inputmode="numeric" pattern="[0-9]*" maxlength="2" autocomplete="off" aria-label="시" aria-describedby="timeError">
+        <span class="tf-unit">시</span>
+      </label>
+      <span class="tf-sep" aria-hidden="true">:</span>
+      <label class="tf">
+        <input type="text" id="minInput" inputmode="numeric" pattern="[0-9]*" maxlength="2" autocomplete="off" aria-label="분" aria-describedby="timeError">
+        <span class="tf-unit">분</span>
+      </label>
+    </div>
+    <p class="field-error" id="timeError" role="alert" hidden></p>
+    <button type="button" class="link-btn" id="backToNow">지금으로 되돌리기</button>
+  </div>
+
+  <button type="button" class="btn btn-primary btn-record" id="recordBtn">
+    <span class="btn-main">기록</span>
+    <span class="btn-sub" id="recordSummary"></span>
+  </button>
+</dialog>
 
 <script src="app.js"></script>
 </body>
