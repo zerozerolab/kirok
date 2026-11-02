@@ -318,6 +318,13 @@
     clear(s);
     var x = function (t) { return C.L + (t - range.start) / (range.end - range.start) * (C.R - C.L); };
 
+    // 지나온 구간을 채울 빗금 무늬
+    var defs = svg('defs', {});
+    var hatch = svg('pattern', { id: 'hatch', width: 5, height: 5, patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(45)' });
+    hatch.appendChild(svg('line', { x1: 0, y1: 0, x2: 0, y2: 5, 'class': 'hatch-line' }));
+    defs.appendChild(hatch);
+    s.appendChild(defs);
+
     // 6시간 눈금
     for (var t = Math.ceil(range.start / HOUR) * HOUR; t <= range.end; t += HOUR) {
       var hr = new Date(t).getHours();
